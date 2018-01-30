@@ -1,14 +1,14 @@
-##PROJECT DESCRIPTION 
-##Wine prices analysis##
+## PROJECT DESCRIPTION 
+## Wine prices analysis
 
-#What#
+# What
 Predict wine prices 
 
-#Why#
+# Why
 To figure out do characteristics matter in wine prices?
 There is an assumption that some of them are overpriced.
 
-#How
+# How
 **2 ways**
 *First*
 - divide it in clusters based on C
@@ -18,9 +18,9 @@ There is an assumption that some of them are overpriced.
 - clustering based on price
 - use decision trees to figure out whether wine assigned to the cluster on purpose
 
-#Output
+# Output
 Proof or disproof that wine prces are based in its characteristics, not random
 
-#Data
+# Data
 - Wine Enthusiasts 
 - Merge it with region/country characteristics (temp, type..)
