@@ -19,7 +19,7 @@ There is an assumption that some of them are overpriced.
 - use decision trees to figure out whether wine assigned to the cluster on purpose
 
 # Output
-Proof or disproof that wine prces are based in its characteristics, not random
+Proof or disproof that wine prices are based in its characteristics, not random
 
 # Data
 - Wine Enthusiasts 
