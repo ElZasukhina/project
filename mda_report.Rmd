@@ -1,0 +1,326 @@
+---
+title: "Wine price analysis"
+author: "Elizaveta Zasukhina"
+date: "5 March 2018"
+output:
+  ioslides_presentation:
+    widescreen: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Project description
+
+**Data**
+
+2 datasets from Wine Enthusiasts 
+
+**Purpose**
+
+- to figure out what characteristics matter in the wine pricing
+- what defines good wine
+- where good wine comes from
+
+## Data overview
+```{r, include=FALSE}
+library(data.table)
+library(dplyr)
+library(magrittr)
+library(ggplot2)
+
+winedata1 <- fread('data/winemag-data_first150k.csv') 
+winedata2 <- fread('data/winemag-data-130k-v2.csv', sep='auto')
+colnames(winedata2)[1] <- "ID"
+colnames(winedata1)[1] <- "ID"
+winedata2 <- winedata2[, -c(10:12)]
+winedata <- rbind(winedata1, winedata2) 
+rm(winedata1, winedata2)
+winedata <- winedata[!is.na(winedata$price),]
+```
+
+```{r data}
+str(winedata)
+```
+
+## Outliers
+
+```{r plot price points, echo=FALSE}
+library(ggplot2)
+ggplot(aes(points, price), data=winedata) +
+  geom_jitter()
+```
+
+## Outliers
+
+Who's that guy?
+
+```{r}
+print(winedata[winedata$price > 3000])
+```
+
+Biovert family can trace their family heritage all the way back to 1764, before the French Revolution.
+
+- *65% Cabernet Sauvignon, 30% Merlot, 5% Petit Verdot* 
+- The terroir is gravel, limestone and clay soils
+
+[Info](https://www.thewinecellarinsider.com/bordeaux-wine-producer-profiles/bordeaux/haut-medoc-lesser-appellations/chateau-les-ormes-sorbet-medoc-bordeaux-wine/)
+
+## Outlier
+<div style="width:100px; height:70px">
+![Château les Ormes Sorbet](outlier.png)
+<\div>
+
+## Best soil
+<div style="width:100px; height:70px">
+![Wine regions with Mediterranean climates](Medclim.png)
+<\div>
+
+## Best soil dummy
+```{r best soil dummy}
+winedata$bestsoil <- 0
+
+bestprovince <- c('Burgundy','Mendoza', 'Sicily', 'Tuscany', 'Marlborough', 'Loire Valley', 
+                  'Mosel', 'Bordeaux', 'Napa Valley', 'Alsace', 'Priorat', 'Coonawarra')
+winedata$bestsoil <- ifelse(winedata$province %in% bestprovince,1,0)
+
+summary(winedata$bestsoil)
+```
+
+## Best soil dummy
+```{r best soil plot}
+ggplot(winedata, aes(
+  x=bestsoil, y=points, fill = as.factor(bestsoil), group = as.factor(bestsoil))
+  ) +
+  geom_violin(draw_quantiles = c(0.25, 0.5, 0.75))
+```
+
+## Principal Component Analysis
+```{r, include=FALSE}
+winedata_clustering1 <- winedata[,c('ID', 'points', 'price', 'bestsoil','country','region_2', 'variety')]
+scaled1 <- scale(winedata_clustering1[,c('price', 'points')])
+colnames(scaled1) <- c('price_scaled', 'points_scaled')
+winedata_pca <- cbind(winedata_clustering1, scaled1)
+winedata_pca <- winedata_pca[,c('bestsoil', 'price_scaled', 'points_scaled')]
+pca <- prcomp(winedata_pca, scale = FALSE)
+```
+
+```{r}
+plot(pca, type='l')
+```
+
+## PCA: what matters?
+
+```{r}
+pca$rotation
+```
+
+## Clustering: choosing # of clusters
+```{r, include=FALSE}
+winedata$price_log <- log(winedata$price)
+winedata$points_log <- log(winedata$points)
+scaled <- scale(winedata[,c('price_log', 'points_log')])
+colnames(scaled) <- c('price_scaled', 'points_scaled')
+scols <- c('country','province', 'region_1', 'region_2', 'variety')
+winedata <- winedata[ ,(scols) := lapply(.SD, as.factor), .SDcols = scols]
+winedata <- cbind(winedata, scaled)
+```
+
+```{r elbow method, echo=FALSE}
+inter <- c()
+for (i in 1:10) {
+  inter <- c(inter, kmeans(winedata[,c('price_scaled', 'points_scaled')],i)$tot.withinss)
+  
+}
+plot(1:i, inter, type = "b")
+lines(c(2,10), inter[c(2,10)], col = "green")
+lines(c(3,10), inter[c(3,10)], col = "red")
+lines(c(4,10), inter[c(4,10)], col = "blue")
+
+(inter / inter[1]) %>% diff(1) * 100
+```
+
+## Clustering
+```{r clust, include=FALSE}
+set.seed(1)
+kmeans <- kmeans(winedata[,c('price_scaled', 'points_scaled')], 4)
+winedata$cluster <- kmeans$cluster 
+centers <- kmeans$centers
+```
+
+```{r clust plot, echo=FALSE}
+library(ggplot2)
+ggplot(winedata, aes(points_scaled, price_scaled, col=factor(cluster))) +
+  geom_jitter() +
+  geom_point(data= as.data.frame(kmeans$centers), 
+             aes(points_scaled, price_scaled), inherit.aes = F)
+```
+
+## Clustering
+```{r clust plot 2, echo=FALSE}
+ggplot(winedata, aes(x = cluster, y = price, group = cluster,
+                fill = cluster)) +
+  geom_boxplot()
+```
+
+## Clust plot
+```{r clust plot 3, echo=FALSE}
+library(cluster)
+clusplot(winedata[,c('price_scaled', 'points_scaled')], kmeans$cluster, color = TRUE, shade = T, labels = 1)
+```
+
+## Clustering
+```{r clust descr, include=FALSE}
+library(dplyr)
+library(magrittr)
+winedata %>% 
+  group_by(cluster) %>% 
+  summarise_all(funs(mean(.))) -> clusters_tab
+```
+
+```{r, echo=FALSE}
+print(clusters_tab[,c("points", "price", "bestsoil")])
+```
+
+## Decision tree
+```{r dec tree dummies, include=FALSE}
+library(rpart)
+tree_withvariety <- rpart(price ~ ., winedata[,c('country', 'points', 'price', 'variety', 
+                                                 'bestsoil')])
+#creating dummy for 1 bunch of varieties
+tree_withvariety$frame
+path.rpart(tree_withvariety, 9) -> a9
+a9$`9`[length(a9$`9`)] %>% 
+  strsplit("=") %>% 
+  unlist() %>% 
+  strsplit(",") %>% 
+  unlist() -> leaf9
+
+winedata$leaf9 <- ifelse(winedata$variety %in% leaf9[-1], 1,0)
+leaf9[1]
+
+#creating dummy for 2 bunch of varieties
+tree_withvariety$frame
+path.rpart(tree_withvariety, 10) -> a10
+a10$`10`[length(a10$`10`)] %>% 
+  strsplit("=") %>% 
+  unlist() %>% 
+  strsplit(",") %>% 
+  unlist() -> leaf10
+
+winedata$leaf10 <- ifelse(winedata$variety %in% leaf10[-1], 1,0)
+
+#creating dummy for 3 bunch of varieties
+path.rpart(tree_withvariety, 12) -> a12
+a12$`12`[length(a12$`12`)] %>% 
+  strsplit("=") %>% 
+  unlist() %>% 
+  strsplit(",") %>% 
+  unlist() -> leaf12
+
+winedata$leaf12 <- ifelse(winedata$variety %in% leaf12[-1], 1,0)
+
+#creating dummy for 4 bunch of varieties
+path.rpart(tree_withvariety, 30) -> a30
+a30$`30`[length(a30$`30`)] %>% 
+  strsplit("=") %>% 
+  unlist() %>% 
+  strsplit(",") %>% 
+  unlist() -> leaf30
+
+winedata$leaf30 <- ifelse(winedata$variety %in% leaf30[-1], 1,0)
+```
+
+```{r dec tree, echo=FALSE}
+tree_dummie_var <- rpart(price ~ ., winedata[,c('country', 'points', 'price', 'bestsoil',
+                                                           'leaf9', 'leaf10', 'leaf12',
+                                                'leaf30')])
+tree_dummie_var
+```
+
+```{r dec tree plot, echo=FALSE}
+rpart.plot::rpart.plot(tree_dummie_var)
+```
+
+## France
+```{r france, include=FALSE}
+france <- fread('hier_clust_france.csv')
+```
+
+<div style="width:100px; height:70px">
+![Hierarchical clustering](france_hier_clust.png)
+
+## Plot
+```{r france plot}
+ggplot(france, aes(x = price_log, y = points_log, color = as.factor(cluster))) +
+  geom_jitter()
+```
+
+## Words cloud French wines
+```{r france words plot set, include=FALSE}
+library(wordcloud)
+words_france <- france[,.(freq = .N, points = sum(points)), by = variety]
+```
+
+```{r france words plot, echo=FALSE}
+wordcloud(words_france$variety, freq = words_france$freq, min.freq = 20)
+```
+
+## Words cloud: 5 cluster
+```{r france words plot 5, echo=FALSE}
+clust5 <- france[france$cluster==5]
+words_france_clust5 <- clust5[,.(freq = .N, points = sum(points)), by = variety]
+wordcloud(words_france_clust5$variety, freq = words_france_clust5$freq, min.freq = 5)
+```
+
+## Decision tree: cluster 1
+```{r define clust, include=FALSE}
+winedata_clust1 <- winedata[winedata$cluster==1,]
+winedata_clust4 <- winedata[winedata$cluster==4,]
+```
+```{r dec tree clust1 plot, echo=FALSE}
+tree_clust1 <- rpart(price ~ ., winedata_clust1[,c('country', 
+                                                   "points", "price", "bestsoil")])
+rpart.plot::rpart.plot(tree_clust1)
+```
+
+## Decision tree: cluster 4
+```{r dec tree clust4 plot, echo=FALSE}
+tree_clust4 <- rpart(price ~ ., winedata_clust4[,c('country', 
+                                                   "points", "price", "bestsoil")])
+rpart.plot::rpart.plot(tree_clust4)
+```
+
+# Semantic analysis
+Words are represented as points in Euclidean space. Main ideas of Topic Modelling is that documents are consist of number of topics, where a <span style="color:red">topic is a probability distribution over words</span>.
+
+## Topic modelling: cluster 4
+
+```{r tm 4}
+htmltools::includeHTML("tm_vis_4.html")
+```
+
+## Topic modelling: cluster 1 
+
+```{r tm 1}
+htmltools::includeHTML("tm_visual_1.html")
+```
+
+## Summary 
+
+- pricing is not random!
+- price depends on the country, region
+- sommeliers estimation of wine and price are not independent events 
+- best (and expensive) wine comes from 2 groups of countries:
+
+ * Argentina, Austria, Hungary, Italy, Portugal, Spain, US
+ * Australia, France, Germany
+ 
+- sommeliers' use different groups of words to describe expensive and relatively cheap wine 
+
+## Slide with a good picture :)
+
+<div style="width:100px; height:70px">
+![Vineyard](alsace.jpg)
+<\div>
